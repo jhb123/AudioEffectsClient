@@ -11,7 +11,8 @@ import androidx.compose.ui.Modifier
 
 @Composable
 fun PermissionScreen(
-    showRational: Boolean,
+    audioShowRational: Boolean,
+    internetShowRational: Boolean,
     requestPermission: ()->Unit,
     modifier: Modifier = Modifier
 
@@ -23,10 +24,14 @@ fun PermissionScreen(
         modifier = modifier.fillMaxSize()
     ) {
 
-        if (showRational) {
+        if (internetShowRational and audioShowRational) {
+            Text(text = "To use this app, Grant it permission to record audio and access the internet in your phone's settings")
+        } else if (audioShowRational) {
             Text(text = "To use this app, Grant it permission to record audio in your phone's settings")
+        } else if (internetShowRational) {
+            Text(text = "To use this app, Grant it permission to access the internet your phone's settings")
         } else {
-            Text(text = "This app needs to record audio to function.")
+            Text(text = "This app needs to record audio and access the internet to function.")
             Button(onClick = requestPermission) {
                 Text(text = "Request Permissions")
             }

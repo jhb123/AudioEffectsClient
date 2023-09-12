@@ -5,4 +5,5 @@ data class MainScreenUiState(
     val record: Boolean = false,
     val level: Double = 0.0,
     val maxLevel: Double= 0.0,
+    val addresses: List<String> = listOf(),
 )
