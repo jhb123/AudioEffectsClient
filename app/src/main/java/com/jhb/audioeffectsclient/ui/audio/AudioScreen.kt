@@ -43,6 +43,8 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.tooling.preview.Preview
+import com.jhb.audioprotocol.MyClass
+
 
 const val TAG = "AudioScreen"
 @Composable
@@ -54,7 +56,8 @@ fun AudioScreen(){
     AudioScreenComposable(
         uiState = uiState,
         scanIps = {audioScreenViewModel.scanIpAddresses()},
-        toggleProcessAudio = {audioScreenViewModel.toggleProcessAudio(it)}
+        toggleProcessAudio = {audioScreenViewModel.toggleProcessAudio(it)},
+        testSendConfig = {audioScreenViewModel.makeConfigMessage()}
     )
 
 }
@@ -63,6 +66,7 @@ fun AudioScreen(){
 fun AudioScreenComposable(
     uiState: AudioScreenUiState,
     scanIps: ()->Unit,
+    testSendConfig: ()->Unit,
     toggleProcessAudio: (AudioRecord)->Int){
     val context = LocalContext.current
 
@@ -87,12 +91,14 @@ fun AudioScreenComposable(
             )
             .setBufferSizeInBytes(128)
             .build()
+        //val foo = MyClass()
 
         Column(
             verticalArrangement = Arrangement.SpaceBetween,
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier.fillMaxSize()
         ) {
+            //Text(text = foo.test )
             IpScanner(
                 ableToScan = !uiState.isScanning,
                 devicesFound = uiState.addresses,
@@ -113,6 +119,9 @@ fun AudioScreenComposable(
                 modifier = Modifier.padding(10.dp)
             ) {
                 Text(text = if (uiState.record) "Stop" else "Start")
+            }
+            Button(onClick = testSendConfig){
+                Text(text = "Send Config")
             }
         }
     }

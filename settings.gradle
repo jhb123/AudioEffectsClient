@@ -14,3 +14,4 @@ dependencyResolutionManagement {
 }
 rootProject.name = "Audio Effects Client"
 include ':app'
+include ':audioProtocol'

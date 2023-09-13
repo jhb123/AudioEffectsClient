@@ -4,7 +4,6 @@ import android.media.AudioRecord
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.jhb.audioeffectsclient.ui.main.TAG
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -16,6 +15,7 @@ import java.net.InetSocketAddress
 import java.net.Socket
 import kotlin.math.log
 import kotlin.math.max
+
 
 class AudioScreenViewModel: ViewModel() {
     private val _uiState = MutableStateFlow(AudioScreenUiState())
@@ -127,4 +127,14 @@ class AudioScreenViewModel: ViewModel() {
         else return 20 * log(p/p0,10f)
     }
 
+    fun makeConfigMessage() {
+        val cfg = audio.items.Audio.config.newBuilder().apply {
+            setChannels(1)
+            setEncoding(audio.items.Audio.Encoding.F32)
+            setSampleRate(44100)
+        }.build()
+
+        Log.i(TAG,"Channels: ${cfg.channels}, encoding: ${cfg.encoding}, sample rate: ${cfg.sampleRate}")
+
+    }
 }
