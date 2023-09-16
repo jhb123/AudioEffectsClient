@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -35,6 +36,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -107,29 +109,42 @@ fun AudioScreenComposable(
         modifier = Modifier.fillMaxSize()
     ) {
         //Text(text = foo.test )
-        IpScanner(
-            ableToScan = !uiState.isScanning,
-            ableToConnect = !uiState.record,
-            devicesFound = uiState.addresses,
-            scan = scanIps,
-            connect = startStream,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(10.dp)
-        )
+
+
 
         WaveForm(
             modifier = Modifier.height(400.dp),
             yPoints = uiState.audioWaveForm,
-            maxY = 0.5f
+            maxY = 0.3f
         )
 
-        Button(
-            onClick = stopStream,
-            enabled = uiState.record
-        ){
-            Text(text = if (uiState.record) "Stop" else "Choose source")
+        Card(modifier = Modifier
+            .fillMaxWidth(1f)
+            .wrapContentHeight()
+            .padding(10.dp)
+            ) {
+            IpScanner(
+                ableToScan = !uiState.isScanning,
+                ableToConnect = !uiState.record,
+                devicesFound = uiState.addresses,
+                scan = scanIps,
+                connect = startStream,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(10.dp)
+            )
+            Button(
+                onClick = stopStream,
+                enabled = uiState.record,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(10.dp)
+            ){
+                Text(text = if (uiState.record) "Stop" else "Choose source")
+            }
         }
+
+
 
     }
 }
