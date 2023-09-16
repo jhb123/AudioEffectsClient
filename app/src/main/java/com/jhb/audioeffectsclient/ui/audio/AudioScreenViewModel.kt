@@ -2,17 +2,31 @@ package com.jhb.audioeffectsclient.ui.audio
 
 import android.media.AudioRecord
 import android.util.Log
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import audio.items.Audio
+import com.google.protobuf.ByteString
+import com.jhb.audioeffectsclient.network.AudioStreamer
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.IOException
+import java.net.DatagramPacket
+import java.net.DatagramSocket
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.Socket
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import kotlin.math.log
 import kotlin.math.max
 
@@ -24,102 +38,69 @@ class AudioScreenViewModel: ViewModel() {
     private val deque = ArrayDeque(List(10) { 0.0 })
     private val waveform = ArrayDeque(List(100) { 0f })
 
+    private val audioStreamer = AudioStreamer()
+
+    var outputFromFlow = 0
+
+
+    fun handleConnection(audioRecord: AudioRecord, address: String){
+        val coroutineExceptionHandler = CoroutineExceptionHandler{_, throwable ->
+            throwable.printStackTrace()
+        }
+
+
+        _uiState.update {
+            it.copy(record = true)
+        }
+        viewModelScope.launch(Dispatchers.IO+ coroutineExceptionHandler) {
+            audioStreamer.connectToServer(address)
+            audioStreamer.sendConfig()
+            var lastMax = 0f
+            var i = 0
+            audioStreamer.startStream(audioRecord).collect { buffer->
+                i += 1
+                if (buffer.max() > lastMax) lastMax = buffer.max()
+
+                if (i%10 == 0){
+                    val soundLevel = lastMax //logarithmicSound(buffer.max(),0.5f)
+                    lastMax = 0f
+                    waveform.addFirst(soundLevel)
+                    waveform.removeLast()
+
+                    //Log.i(TAG,"Sound level: $soundLevel")
+                    _uiState.update {
+                        it.copy(
+                            maxLevel = max(soundLevel.toDouble(),it.maxLevel),
+                            audioWaveForm = waveform.toList()
+                        )
+                    }
+                }
+            }
+            Log.i(TAG,"finished streaming")
+        }
+
+    }
+
+
     fun scanIpAddresses() {
 
         viewModelScope.launch(Dispatchers.IO) {
-            val addresses = mutableListOf<String>()
+            val addresses = mutableStateListOf<String>()
             _uiState.update {
                 it.copy(
                     addresses = addresses,
                     isScanning = true
                 )
             }
-
-            Log.i(TAG, "Starting Scan")
-            val subnet = "192.168.0."
-
-
-            for (i in 0..255){
-                val address = subnet+i
-                //InetSocketAddress.createUnresolved(address,8000).isUnresolved
-                if(InetAddress.getByName(address).isReachable(50)){
-                    val socket_address = InetSocketAddress(address, 43442)
-                    val socket = Socket()
-                    try {
-                        socket.connect(socket_address,1000)
-                        socket.close()
-                        addresses.add(InetAddress.getByName(address).hostName)
-                        Log.i(TAG, "Found server at $address")
-                        addresses.sort()
-                        _uiState.update {
-                            it.copy(addresses = addresses)
-                        }
-                    }catch (e: IOException) {
-                        Log.i(TAG, "$address has no valid server")
-                    }
-                }
-                else{
-                    //Log.i(TAG,"${address} not found")
-                }
+            audioStreamer.scanIpAddresses().collect {newAddress ->
+                addresses.add(newAddress)
             }
             _uiState.update {
                 it.copy(isScanning = false)
             }
-            Log.i(TAG,"Finished Scanning network")
         }
     }
 
-
-    fun toggleProcessAudio(audioRecord: AudioRecord): Int{
-
-        if (uiState.value.record){
-            Log.i(TAG,"Initiating the Stop Recording sequence")
-            audioRecord.stop()
-            audioRecord.release()
-            _uiState.update {
-                it.copy(record = false)
-            }
-        } else {
-            Log.i(TAG,"Initiating the Start Recording sequence")
-            _uiState.update {
-                it.copy(record = true)
-            }
-            audioRecord.startRecording()
-
-            viewModelScope.launch(Dispatchers.IO) {
-                var buffer = FloatArray(128)
-                var i = 0
-
-                var lastMax = 0f
-                while (uiState.value.record) {
-                    audioRecord.read(buffer,0,128, AudioRecord.READ_BLOCKING)
-                    i += 1
-                    if (buffer.max() > lastMax) lastMax = buffer.max()
-
-                    if (i%10 == 0){
-                        val soundLevel = lastMax //logarithmicSound(buffer.max(),0.5f)
-                        lastMax = 0f
-                        deque.addFirst(soundLevel.toDouble())
-                        deque.removeLast()
-                        waveform.addFirst(soundLevel)
-                        waveform.removeLast()
-
-                        //Log.i(TAG,"Sound level: $soundLevel")
-                        _uiState.update {
-                            it.copy(
-                                level = deque.average(),
-                                maxLevel = max(soundLevel.toDouble(),it.maxLevel),
-                                audioWaveForm = waveform.toList()
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        Log.i(TAG,"Finished modifying the recording state")
-        return 1
-    }
 
     private fun logarithmicSound(p: Float, p0: Float): Float {
         if( p0 <= 0 ) return 0f
@@ -127,14 +108,11 @@ class AudioScreenViewModel: ViewModel() {
         else return 20 * log(p/p0,10f)
     }
 
-    fun makeConfigMessage() {
-        val cfg = audio.items.Audio.config.newBuilder().apply {
-            setChannels(1)
-            setEncoding(audio.items.Audio.Encoding.F32)
-            setSampleRate(44100)
-        }.build()
-
-        Log.i(TAG,"Channels: ${cfg.channels}, encoding: ${cfg.encoding}, sample rate: ${cfg.sampleRate}")
-
+    fun stopStream() {
+        audioStreamer.endStream()
+        _uiState.update {
+            it.copy(record = false)
+        }
     }
+
 }

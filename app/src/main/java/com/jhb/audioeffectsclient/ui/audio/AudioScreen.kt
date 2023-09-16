@@ -38,48 +38,36 @@ import androidx.compose.material3.AssistChip
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.runtime.ComposeCompilerApi
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.tooling.preview.Preview
-import com.jhb.audioprotocol.MyClass
+import kotlinx.coroutines.flow.collectLatest
 
 
 const val TAG = "AudioScreen"
+
 @Composable
-fun AudioScreen(){
+fun AudioScreen() {
 
     val audioScreenViewModel: AudioScreenViewModel = viewModel()
     val uiState by audioScreenViewModel.uiState.collectAsState()
-
-    AudioScreenComposable(
-        uiState = uiState,
-        scanIps = {audioScreenViewModel.scanIpAddresses()},
-        toggleProcessAudio = {audioScreenViewModel.toggleProcessAudio(it)},
-        testSendConfig = {audioScreenViewModel.makeConfigMessage()}
-    )
-
-}
-
-@Composable
-fun AudioScreenComposable(
-    uiState: AudioScreenUiState,
-    scanIps: ()->Unit,
-    testSendConfig: ()->Unit,
-    toggleProcessAudio: (AudioRecord)->Int){
     val context = LocalContext.current
 
-    val recorder = if (ActivityCompat.checkSelfPermission(
+
+    if (ActivityCompat.checkSelfPermission(
             context,
             Manifest.permission.RECORD_AUDIO
         ) != PackageManager.PERMISSION_GRANTED
     ) {
-        return
-    }
-    else {
+        // TODO: tidy up the permission code. You should never reach here
+        Text(text = "NOBODY SHOULD BE ABLE TO READ THIS!")
+    } else {
         //val mainScreenViewModel: MainScreenViewModel = viewModel()
 
+        //should this be made in the ui?
         val audioRecord = AudioRecord.Builder()
             .setAudioSource(MediaRecorder.AudioSource.MIC)
             .setAudioFormat(
@@ -91,66 +79,86 @@ fun AudioScreenComposable(
             )
             .setBufferSizeInBytes(128)
             .build()
-        //val foo = MyClass()
 
-        Column(
-            verticalArrangement = Arrangement.SpaceBetween,
-            horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.fillMaxSize()
-        ) {
-            //Text(text = foo.test )
-            IpScanner(
-                ableToScan = !uiState.isScanning,
-                devicesFound = uiState.addresses,
-                scan = scanIps,
-                connect = {},
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(10.dp)
-            )
 
-            WaveForm(
-                modifier = Modifier.height(400.dp),
-                yPoints = uiState.audioWaveForm,
-                maxY = 0.5f
-            )
-            Button(
-                onClick = {toggleProcessAudio(audioRecord)},
-                modifier = Modifier.padding(10.dp)
-            ) {
-                Text(text = if (uiState.record) "Stop" else "Start")
-            }
-            Button(onClick = testSendConfig){
-                Text(text = "Send Config")
-            }
+        AudioScreenComposable(
+            uiState = uiState,
+            scanIps = { audioScreenViewModel.scanIpAddresses() },
+            startStream = {address -> audioScreenViewModel.handleConnection(audioRecord,address) },
+            stopStream = {audioScreenViewModel.stopStream()},
+            audioRecord = audioRecord,
+        )
+    }
+
+}
+
+@Composable
+fun AudioScreenComposable(
+    uiState: AudioScreenUiState,
+    scanIps: () -> Unit,
+    startStream: (String) -> Unit,
+    stopStream: () -> Unit,
+    audioRecord: AudioRecord,
+) {
+
+    Column(
+        verticalArrangement = Arrangement.SpaceBetween,
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.fillMaxSize()
+    ) {
+        //Text(text = foo.test )
+        IpScanner(
+            ableToScan = !uiState.isScanning,
+            ableToConnect = !uiState.record,
+            devicesFound = uiState.addresses,
+            scan = scanIps,
+            connect = startStream,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(10.dp)
+        )
+
+        WaveForm(
+            modifier = Modifier.height(400.dp),
+            yPoints = uiState.audioWaveForm,
+            maxY = 0.5f
+        )
+
+        Button(
+            onClick = stopStream,
+            enabled = uiState.record
+        ){
+            Text(text = if (uiState.record) "Stop" else "Choose source")
         }
+
     }
 }
+
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun IpScanner(
     ableToScan: Boolean,
+    ableToConnect: Boolean,
     devicesFound: List<String>?,
-    scan: ()->Unit,
-    connect: ()->Unit,
+    scan: () -> Unit,
+    connect: (String) -> Unit,
     modifier: Modifier = Modifier
-){
+) {
 
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        modifier = modifier.heightIn(min= 50.dp)
+        modifier = modifier.heightIn(min = 50.dp)
     ) {
         if (devicesFound.isNullOrEmpty() and ableToScan) {
             OutlinedButton(
                 onClick = scan,
-                enabled = ableToScan,
+                enabled = ableToScan and ableToConnect,
             ) {
                 Text(text = "Scan")
                 Icon(Icons.Rounded.Refresh, contentDescription = "Refresh")
             }
-        }
-        else {
+        } else {
             IconButton(
                 onClick = scan,
                 enabled = ableToScan,
@@ -159,13 +167,13 @@ fun IpScanner(
             }
         }
         FlowRow() {
-            devicesFound?.let{ list->
+            devicesFound?.let { list ->
                 list.forEach {
                     AssistChip(
-                        onClick = connect,
-                        label = {Text(text = it)},
-                        modifier = Modifier.padding(4.dp,0.dp),
-                        //enabled = ableToScan
+                        onClick = { connect(it) },
+                        label = { Text(text = it) },
+                        modifier = Modifier.padding(4.dp, 0.dp),
+                        enabled = ableToConnect
                     )
                 }
             }
@@ -175,10 +183,11 @@ fun IpScanner(
 
 @Preview
 @Composable
-fun PreviewOfIpScanner(){
+fun PreviewOfIpScanner() {
     IpScanner(
         ableToScan = false,
-        devicesFound = null,//listOf("example 1", "dev 2", "dasdasdsadasd 3","a"),
+        ableToConnect = false,
+        devicesFound = listOf("example 1", "dev 2", "dasdasdsadasd 3","a"),
         scan = {},
         connect = {},
         modifier = Modifier.width(480.dp)
@@ -299,9 +308,31 @@ fun WaveForm(
     }
 }
 
+@Preview
+@Composable
+fun WaveFormPreview() {
+    WaveForm(
+        modifier = Modifier.height(100.dp),
+        yPoints = listOf(0.0f, 0.2f, 0.5f, 0.4f, 0.9f, 0.0f),
+        maxY = 1f
+    )
+}
+
+@Composable
+fun ConnectionButton(
+    onClick: ()->Unit,
+    connected: Boolean,
+){
+    Button(onClick = onClick){
+        Text("Connect")
+    }
+}
 
 @Preview
 @Composable
-fun WaveFormPreview(){
-    WaveForm(modifier = Modifier.height(100.dp), yPoints = listOf(0.0f,0.2f,0.5f,0.4f,0.9f,0.0f), maxY = 1f)
+fun ConnectionButtonPreview(){
+    ConnectionButton(
+        onClick = {},
+        connected = true
+    )
 }
