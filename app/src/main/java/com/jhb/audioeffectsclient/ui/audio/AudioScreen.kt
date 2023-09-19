@@ -1,6 +1,7 @@
 package com.jhb.audioeffectsclient.ui.audio
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.AudioFormat
 import android.media.AudioRecord
@@ -40,13 +41,13 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.runtime.ComposeCompilerApi
+import androidx.compose.runtime.remember
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.tooling.preview.Preview
-import kotlinx.coroutines.flow.collectLatest
+import com.jhb.audioeffectsclient.services.AudioService
 
 
 const val TAG = "AudioScreen"
@@ -70,17 +71,19 @@ fun AudioScreen() {
         //val mainScreenViewModel: MainScreenViewModel = viewModel()
 
         //should this be made in the ui?
-        val audioRecord = AudioRecord.Builder()
-            .setAudioSource(MediaRecorder.AudioSource.MIC)
-            .setAudioFormat(
-                AudioFormat.Builder()
-                    .setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
-                    .setSampleRate(44100)
-                    .setChannelMask(AudioFormat.CHANNEL_IN_MONO)
-                    .build()
-            )
-            .setBufferSizeInBytes(128)
-            .build()
+        val audioRecord = remember {
+            AudioRecord.Builder()
+                .setAudioSource(MediaRecorder.AudioSource.MIC)
+                .setAudioFormat(
+                    AudioFormat.Builder()
+                        .setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
+                        .setSampleRate(44100)
+                        .setChannelMask(AudioFormat.CHANNEL_IN_MONO)
+                        .build()
+                )
+                .setBufferSizeInBytes(128*4)
+                .build()
+        }
 
 
         AudioScreenComposable(
@@ -88,7 +91,6 @@ fun AudioScreen() {
             scanIps = { audioScreenViewModel.scanIpAddresses() },
             startStream = {address -> audioScreenViewModel.handleConnection(audioRecord,address) },
             stopStream = {audioScreenViewModel.stopStream()},
-            audioRecord = audioRecord,
         )
     }
 
@@ -100,7 +102,6 @@ fun AudioScreenComposable(
     scanIps: () -> Unit,
     startStream: (String) -> Unit,
     stopStream: () -> Unit,
-    audioRecord: AudioRecord,
 ) {
 
     Column(
@@ -109,7 +110,7 @@ fun AudioScreenComposable(
         modifier = Modifier.fillMaxSize()
     ) {
         //Text(text = foo.test )
-
+        val applicationContext = LocalContext.current.applicationContext
 
 
         WaveForm(
@@ -128,13 +129,25 @@ fun AudioScreenComposable(
                 ableToConnect = !uiState.record,
                 devicesFound = uiState.addresses,
                 scan = scanIps,
-                connect = startStream,
+                connect = {ipAddress->
+                    Intent(applicationContext, AudioService::class.java).also {
+                        it.action = AudioService.Actions.START.toString()
+                        startStream(ipAddress)
+                        applicationContext.startService(it)
+                    }
+                },
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(10.dp)
             )
             Button(
-                onClick = stopStream,
+                onClick = {
+                    Intent(applicationContext, AudioService::class.java).also {
+                        it.action = AudioService.Actions.STOP.toString()
+                        stopStream()
+                        applicationContext.startService(it)
+                    }
+                },
                 enabled = uiState.record,
                 modifier = Modifier
                     .fillMaxWidth()
@@ -143,9 +156,6 @@ fun AudioScreenComposable(
                 Text(text = if (uiState.record) "Stop" else "Choose source")
             }
         }
-
-
-
     }
 }
 
