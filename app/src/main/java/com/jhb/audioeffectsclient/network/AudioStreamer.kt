@@ -34,14 +34,16 @@ import java.nio.ByteOrder
 
 const val TAG = "AudioStreamer"
 
-class AudioStreamer  {
+
+object AudioStreamer  {
+
+    // This object is for starting, configuring, sending, and stopping the stream of
+    // audio data to the server.
+    // Having this be an object might not be the nicest way to implement this feature.
+    // Since its a 1 screen app and there's only one audio streamer, it is convenient.
 
     private val socket = DatagramSocket()
     private val isStreaming = MutableStateFlow(false)
-    // private val RECORD_AUDIO_PERMISSION_REQUEST_CODE = 1001
-    //lateinit var audioRecord: AudioRecord;
-
-
 
     fun endStream(){
         isStreaming.update { false }
@@ -108,7 +110,7 @@ class AudioStreamer  {
             delay(1) //Is the server too slow?
             emit(buffer)
         }
-
+        Log.i(TAG,"Sending termination message")
         val termMsg = makeTerminationMessage().toByteArray()
         audioRecord.stop()
         socket.send(DatagramPacket(termMsg, 0, termMsg.size))
