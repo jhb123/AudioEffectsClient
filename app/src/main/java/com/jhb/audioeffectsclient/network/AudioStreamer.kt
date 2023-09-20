@@ -1,7 +1,17 @@
 package com.jhb.audioeffectsclient.network
 
+import android.Manifest
+import android.annotation.SuppressLint
+import android.app.Service
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.media.AudioFormat
 import android.media.AudioRecord
+import android.media.MediaRecorder
+import android.os.IBinder
 import android.util.Log
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import audio.items.Audio
 import com.google.protobuf.ByteString
 import kotlinx.coroutines.Dispatchers
@@ -21,9 +31,16 @@ import java.net.SocketException
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
+
 const val TAG = "AudioStreamer"
 
-class AudioStreamer {
+
+object AudioStreamer  {
+
+    // This object is for starting, configuring, sending, and stopping the stream of
+    // audio data to the server.
+    // Having this be an object might not be the nicest way to implement this feature.
+    // Since its a 1 screen app and there's only one audio streamer, it is convenient.
 
     private val socket = DatagramSocket()
     private val isStreaming = MutableStateFlow(false)
@@ -83,17 +100,17 @@ class AudioStreamer {
 
         audioRecord.startRecording()
 
-        val buffer = FloatArray(64)
+        val buffer = FloatArray(128)
 
         while (isStreaming.value) {
-            audioRecord.read(buffer, 0, 64, AudioRecord.READ_BLOCKING)
-            emit(buffer)
+            audioRecord.read(buffer, 0, 128, AudioRecord.READ_BLOCKING)
             val msg = makeDataMessage(buffer)//.writeTo(outputStream)
             val bytesMsg = msg.toByteArray()
             socket.send(DatagramPacket(bytesMsg, 0, bytesMsg.size))
-            delay(1)
+            delay(1) //Is the server too slow?
+            emit(buffer)
         }
-
+        Log.i(TAG,"Sending termination message")
         val termMsg = makeTerminationMessage().toByteArray()
         audioRecord.stop()
         socket.send(DatagramPacket(termMsg, 0, termMsg.size))

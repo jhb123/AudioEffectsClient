@@ -1,10 +1,12 @@
 package com.jhb.audioeffectsclient.ui.audio
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
+import android.util.Log
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -40,19 +42,25 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.runtime.ComposeCompilerApi
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.tooling.preview.Preview
-import kotlinx.coroutines.flow.collectLatest
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.LifecycleOwner
+import com.jhb.audioeffectsclient.network.AudioStreamer.endStream
+import com.jhb.audioeffectsclient.services.AudioService
 
 
 const val TAG = "AudioScreen"
 
 @Composable
-fun AudioScreen() {
+fun AudioScreen(lifecycleOwner: LifecycleOwner = LocalLifecycleOwner.current) {
 
     val audioScreenViewModel: AudioScreenViewModel = viewModel()
     val uiState by audioScreenViewModel.uiState.collectAsState()
@@ -70,17 +78,19 @@ fun AudioScreen() {
         //val mainScreenViewModel: MainScreenViewModel = viewModel()
 
         //should this be made in the ui?
-        val audioRecord = AudioRecord.Builder()
-            .setAudioSource(MediaRecorder.AudioSource.MIC)
-            .setAudioFormat(
-                AudioFormat.Builder()
-                    .setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
-                    .setSampleRate(44100)
-                    .setChannelMask(AudioFormat.CHANNEL_IN_MONO)
-                    .build()
-            )
-            .setBufferSizeInBytes(128)
-            .build()
+        val audioRecord = remember {
+            AudioRecord.Builder()
+                .setAudioSource(MediaRecorder.AudioSource.MIC)
+                .setAudioFormat(
+                    AudioFormat.Builder()
+                        .setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
+                        .setSampleRate(44100)
+                        .setChannelMask(AudioFormat.CHANNEL_IN_MONO)
+                        .build()
+                )
+                .setBufferSizeInBytes(128*4)
+                .build()
+        }
 
 
         AudioScreenComposable(
@@ -88,8 +98,26 @@ fun AudioScreen() {
             scanIps = { audioScreenViewModel.scanIpAddresses() },
             startStream = {address -> audioScreenViewModel.handleConnection(audioRecord,address) },
             stopStream = {audioScreenViewModel.stopStream()},
-            audioRecord = audioRecord,
         )
+    }
+
+    // create a DisposableEffect to manage life-cycle events. This may not be the best
+    // way to handle this.
+    DisposableEffect(lifecycleOwner) {
+        //
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_DESTROY) {
+                Log.i("TAG", "ending stream")
+                endStream()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+
+        // When the effect leaves the Composition, remove the observer
+        // from the lifecycle owner to prevent resource leaks.
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
     }
 
 }
@@ -100,7 +128,6 @@ fun AudioScreenComposable(
     scanIps: () -> Unit,
     startStream: (String) -> Unit,
     stopStream: () -> Unit,
-    audioRecord: AudioRecord,
 ) {
 
     Column(
@@ -108,9 +135,7 @@ fun AudioScreenComposable(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier.fillMaxSize()
     ) {
-        //Text(text = foo.test )
-
-
+        val applicationContext = LocalContext.current.applicationContext
 
         WaveForm(
             modifier = Modifier.height(400.dp),
@@ -128,13 +153,25 @@ fun AudioScreenComposable(
                 ableToConnect = !uiState.record,
                 devicesFound = uiState.addresses,
                 scan = scanIps,
-                connect = startStream,
+                connect = {ipAddress->
+                    Intent(applicationContext, AudioService::class.java).also {
+                        it.action = AudioService.Actions.START.toString()
+                        startStream(ipAddress)
+                        applicationContext.startService(it)
+                    }
+                },
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(10.dp)
             )
             Button(
-                onClick = stopStream,
+                onClick = {
+                    Intent(applicationContext, AudioService::class.java).also {
+                        it.action = AudioService.Actions.STOP.toString()
+                        stopStream()
+                        applicationContext.startService(it)
+                    }
+                },
                 enabled = uiState.record,
                 modifier = Modifier
                     .fillMaxWidth()
@@ -143,9 +180,6 @@ fun AudioScreenComposable(
                 Text(text = if (uiState.record) "Stop" else "Choose source")
             }
         }
-
-
-
     }
 }
 
